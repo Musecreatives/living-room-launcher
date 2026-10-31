@@ -24,17 +24,26 @@ data class AppEntry(
     val tint: Color,
 )
 
-// Living Room first (release, then debug build); everything else alphabetical.
+// ShaddaiTV first (release, then debug build); everything else alphabetical.
 private val PINNED = listOf("com.livingroom.tv", "com.livingroom.tv.debug")
 
-/** Lists launchable TV apps plus a Settings tile. Slow (decodes banners): call off the main thread. */
-fun loadApps(context: Context): List<AppEntry> {
+// Utility apps kept off the grid until "Show hidden apps" is selected.
+private val HIDDEN = setOf("com.softwinner.TvdFileManager", "com.android.traceur")
+
+/** Launch action of the tile that shows or hides [HIDDEN] apps; handled by HomeActivity, not Android. */
+const val ACTION_TOGGLE_HIDDEN = "com.livingroom.launcher.TOGGLE_HIDDEN"
+
+/** Lists launchable TV apps plus Settings tiles. Slow (decodes banners): call off the main thread. */
+fun loadApps(
+    context: Context,
+    showHidden: Boolean,
+): List<AppEntry> {
     val pm = context.packageManager
     val apps =
         pm
             .queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER), 0)
             .map { it.activityInfo }
-            .filter { it.packageName != context.packageName }
+            .filter { it.packageName != context.packageName && (showHidden || it.packageName !in HIDDEN) }
             .distinctBy { it.packageName }
             .map { info ->
                 entry(
@@ -62,7 +71,16 @@ fun loadApps(context: Context): List<AppEntry> {
                 entry(pm, info, intent, label = context.getString(R.string.switch_back))
             }
         }
-    return apps + listOfNotNull(settings, switchBack)
+    val toggleHidden =
+        AppEntry(
+            key = ACTION_TOGGLE_HIDDEN,
+            label = context.getString(if (showHidden) R.string.hide_apps else R.string.show_hidden_apps),
+            launch = Intent(ACTION_TOGGLE_HIDDEN),
+            banner = null,
+            icon = null,
+            tint = Color(FALLBACK_TINT),
+        )
+    return apps + listOfNotNull(settings, switchBack, toggleHidden)
 }
 
 private fun entry(

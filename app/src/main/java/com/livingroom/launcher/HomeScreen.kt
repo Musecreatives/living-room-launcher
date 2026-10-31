@@ -45,6 +45,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -78,7 +79,7 @@ fun HomeScreen(
                 verticalArrangement = Arrangement.spacedBy(6.dp),
                 modifier = Modifier.fillMaxSize(),
             ) {
-                itemsIndexed(apps, key = { _, app -> app.key + app.label }) { index, app ->
+                itemsIndexed(apps, key = { _, app -> app.key + app.launch.action }) { index, app ->
                     AppTile(
                         app = app,
                         onFocused = { focused = app },
@@ -193,6 +194,18 @@ private fun Artwork(
 
             app.icon != null -> {
                 Image(app.icon, contentDescription = null, modifier = Modifier.size(64.dp))
+            }
+
+            else -> {
+                Text(
+                    text = app.label,
+                    fontFamily = Figtree,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 18.sp,
+                    color = Fg,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(12.dp),
+                )
             }
         }
     }

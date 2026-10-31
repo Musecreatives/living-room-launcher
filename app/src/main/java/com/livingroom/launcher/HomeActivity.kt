@@ -15,6 +15,7 @@ import kotlinx.coroutines.withContext
 
 class HomeActivity : ComponentActivity() {
     private var apps by mutableStateOf<List<AppEntry>?>(null)
+    private var showHidden = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -24,10 +25,19 @@ class HomeActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         // ponytail: reload on every return to Home (covers installs/removals); add a package receiver if this gets slow
-        lifecycleScope.launch { apps = withContext(Dispatchers.Default) { loadApps(this@HomeActivity) } }
+        reload()
+    }
+
+    private fun reload() {
+        lifecycleScope.launch { apps = withContext(Dispatchers.Default) { loadApps(this@HomeActivity, showHidden) } }
     }
 
     private fun open(app: AppEntry) {
+        if (app.launch.action == ACTION_TOGGLE_HIDDEN) {
+            showHidden = !showHidden
+            reload()
+            return
+        }
         try {
             startActivity(app.launch)
         } catch (ex: ActivityNotFoundException) {

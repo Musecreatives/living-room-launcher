@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ink0">#06080C</color>
-    <color name="ic_launcher_background">#0C1017</color>
+    <color name="ic_launcher_background">#0A1622</color>
     <style name="Theme.Launcher" parent="android:Theme.Material.NoActionBar">
         <item name="android:windowBackground">@color/ink0</item>
         <item name="android:colorBackground">@color/ink0</item>
