@@ -11,11 +11,13 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 
-// Living Room tokens (jellyfin-tv/prototype): near-black ink scale, light foreground.
-val Ink0 = Color(0xFF06080C)
-val Ink2 = Color(0xFF141A24)
-val Fg = Color(0xFFEEF2F7)
-val Fg2 = Color(0xFFB3BDCB)
+// ShaddaiTV tokens (shaddai-enterprises/brand/shaddaitv/tokens.css).
+val Ink0 = Color(0xFF0A1622) // --stv-ink
+val Ink2 = Color(0xFF152738)
+val Fg = Color(0xFFF7F9FC) // --stv-paper
+val Fg2 = Color(0xFFC9D4DF)
+val BlueLight = Color(0xFF8FC1E8) // --stv-blue-light: blue text on ink
+val Blue = Color(0xFF2E75C4) // --stv-blue: fills only
 
 @OptIn(ExperimentalTextApi::class)
 private fun variableFamily(
@@ -25,8 +27,10 @@ private fun variableFamily(
     weights.map { w -> Font(res, weight = w, variationSettings = FontVariation.Settings(FontVariation.weight(w.weight))) },
 )
 
-val Sora = variableFamily(R.font.sora_variable, FontWeight.SemiBold, FontWeight.Bold)
-val Figtree = variableFamily(R.font.figtree_variable, FontWeight.Medium, FontWeight.SemiBold)
+// ShaddaiTV brand type: Manrope for everything (display and body share one family).
+val Manrope = variableFamily(R.font.manrope_variable, FontWeight.Medium, FontWeight.SemiBold, FontWeight.Bold, FontWeight.ExtraBold)
+val Sora = Manrope
+val Figtree = Manrope
 
 /** True when the system "Remove animations" setting is on. */
 @Composable

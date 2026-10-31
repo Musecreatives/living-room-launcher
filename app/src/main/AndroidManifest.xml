@@ -4,8 +4,14 @@
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
 
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- ShaddaiTV's Continue Watching (signature permission: same signing key only) -->
+    <uses-permission android:name="com.livingroom.tv.permission.READ_HOME_SHELF" />
+
     <!-- Package visibility: the TV apps this launcher lists -->
     <queries>
+        <package android:name="com.livingroom.tv" />
+        <package android:name="com.livingroom.tv.debug" />
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
@@ -24,6 +30,7 @@
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:supportsRtl="true"
+        android:usesCleartextTraffic="true"
         android:theme="@style/Theme.Launcher">
         <activity
             android:name=".HomeActivity"
@@ -44,5 +51,16 @@
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Feeds the bell widget; active only after Notification access is granted -->
+        <service
+            android:name=".NotesService"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
     </application>
 </manifest>
