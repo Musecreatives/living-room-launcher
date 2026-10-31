@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ShaddaiTV Home prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  --ink: #0A1622; --ink-2: #152738; --paper: #F7F9FC; --muted: #C9D4DF; --blue: #2E75C4; --blue-light: #8FC1E8;
+  --glass: rgba(255,255,255,.075); --glass-edge: rgba(255,255,255,.16);
+  --ease: cubic-bezier(.16,1,.3,1);
+  color-scheme: dark;
+}
+* { box-sizing: border-box }
+html, body { margin: 0; height: 100% }
+body { background: #05090F; color: var(--paper); font-family: Manrope, "Segoe UI", system-ui, sans-serif; overflow: hidden }
+::selection { background: var(--blue); color: #fff }
+
+/* page chrome around the TV frame */
+.page { height: 100%; display: grid; grid-template-rows: auto auto auto; align-content: center; gap: 14px; padding: 16px max(16px, env(safe-area-inset-right)) 16px max(16px, env(safe-area-inset-left)) }
+.bar { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; max-width: 1600px; width: 100%; margin: 0 auto }
+.bar h1 { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: -.01em }
+.bar p { margin: 0; font-size: 14px; color: #9FB0C2 }
+.bar kbd { font: 600 12px Manrope, sans-serif; border: 1px solid #2B4058; border-radius: 6px; padding: 1px 6px; color: var(--muted) }
+.frame { position: relative; width: 100%; max-width: min(1600px, calc((100dvh - 120px) * 16 / 9)); aspect-ratio: 16/9; margin: 0 auto; border-radius: 14px; overflow: hidden; box-shadow: 0 0 0 1px #1D3247, 0 30px 80px rgba(0,0,0,.6) }
+.note { max-width: 1600px; width: 100%; margin: 0 auto; font-size: 13px; color: #9FB0C2 }
+
+/* the 1920x1080 TV stage, scaled to the frame */
+.stage { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; overflow: hidden; background: var(--ink); user-select: none }
+.wall { position: absolute; inset: -80px; background-size: cover; background-position: center; filter: blur(56px) saturate(1.3) brightness(.62); transition: opacity .7s var(--ease) }
+.wall.off { opacity: 0 }
+.hero-art { position: absolute; right: 0; top: 0; width: 1340px; height: 760px; background-size: cover; background-position: center top;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 38%), linear-gradient(0deg, transparent 0, #000 30%);
+  -webkit-mask-composite: source-in; mask-image: linear-gradient(90deg, transparent 0, #000 38%), linear-gradient(0deg, transparent 0, #000 30%); mask-composite: intersect;
+  transition: opacity .6s var(--ease) }
+.scrim { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(10,22,34,.88) 0, rgba(10,22,34,.55) 42%, rgba(10,22,34,0) 70%), linear-gradient(0deg, rgba(10,22,34,.96) 0, rgba(10,22,34,.6) 30%, rgba(10,22,34,0) 55%) }
+
+.scroller { position: absolute; inset: 0; transition: transform .55s var(--ease) }
+.scroller.down { transform: translateY(-744px) }
+
+.glass { background: var(--glass); -webkit-backdrop-filter: blur(28px) saturate(1.4); backdrop-filter: blur(28px) saturate(1.4); border: 1px solid var(--glass-edge); box-shadow: inset 0 1px 0 rgba(255,255,255,.2), 0 18px 44px rgba(0,0,0,.35) }
+
+.clock { position: absolute; top: 52px; right: 120px; display: flex; align-items: baseline; gap: 14px; padding: 12px 26px; border-radius: 999px; font-variant-numeric: tabular-nums; transition: opacity .3s var(--ease) }
+.clock b { font-size: 30px; font-weight: 700; letter-spacing: -.01em }
+.clock span { font-size: 22px; color: var(--muted); font-weight: 500 }
+
+/* top shelf */
+.shelf { position: absolute; left: 120px; top: 64px; width: 1100px; transition: opacity .35s var(--ease) }
+.shelf.hide { opacity: 0; pointer-events: none }
+.lockup { height: 46px; display: block }
+.title { margin: 34px 0 0; font-size: 84px; line-height: 1.02; font-weight: 800; letter-spacing: -.03em; text-wrap: balance; max-width: 15ch }
+.meta { display: flex; gap: 22px; margin-top: 22px; font-size: 26px; font-weight: 600; color: var(--muted) }
+.meta .left { color: var(--blue-light) }
+.desc { margin: 16px 0 0; max-width: 44ch; font-size: 25px; line-height: 1.45; color: var(--muted); font-weight: 500 }
+.acts { display: flex; gap: 18px; margin-top: 26px }
+.btn { height: 68px; padding: 0 36px; border-radius: 999px; display: inline-flex; align-items: center; gap: 14px; font: 700 26px Manrope, sans-serif; transition: transform .35s var(--ease), background .25s, color .25s, box-shadow .35s var(--ease); cursor: pointer }
+.btn svg { width: 26px; height: 26px }
+.btn.solid { background: var(--paper); color: var(--ink) }
+.btn.glass { color: var(--paper) }
+.btn.focused { transform: scale(1.07); box-shadow: 0 18px 40px rgba(0,0,0,.5) }
+.btn.glass.focused { background: var(--paper); color: var(--ink) }
+
+.app-shelf { position: absolute; left: 120px; top: 150px; display: flex; align-items: flex-end; gap: 48px; transition: opacity .35s var(--ease) }
+.app-shelf.hide { opacity: 0; pointer-events: none }
+.app-shelf .art { width: 576px; height: 324px; border-radius: 26px; background-size: cover; background-position: center; box-shadow: 0 30px 70px rgba(0,0,0,.55), inset 0 0 0 1px rgba(255,255,255,.12) }
+.app-shelf h2 { margin: 0 0 18px; font-size: 76px; font-weight: 800; letter-spacing: -.03em; line-height: 1 }
+
+/* row under the hero */
+.row { position: absolute; left: 120px; top: 562px; display: flex; gap: 28px; transition: opacity .35s var(--ease) }
+.row.hide { opacity: 0; pointer-events: none }
+.group h3 { margin: 0 0 14px; font-size: 24px; font-weight: 700; letter-spacing: -.01em; color: var(--paper) }
+.group .items { display: flex; gap: 24px }
+.group + .group { padding-left: 28px; border-left: 1px solid rgba(255,255,255,.12) }
+
+/* tiles: shelf cards, dock icons, grid tiles share one focus language */
+.tile { position: relative; flex: none; border-radius: 20px; overflow: hidden; background: var(--ink-2) center/cover no-repeat;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.12), 0 10px 24px rgba(0,0,0,.35);
+  transition: transform .45s var(--ease), box-shadow .45s var(--ease); cursor: pointer }
+.tile::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  background: linear-gradient(115deg, transparent 30%, rgba(255,255,255,.28) 46%, transparent 62%) no-repeat; background-size: 250% 100%; background-position: 140% 0; opacity: 0 }
+.tile.focused { transform: translateY(-8px) scale(1.1); z-index: 2;
+  box-shadow: inset 0 0 0 3px rgba(247,249,252,.95), 0 30px 60px rgba(0,0,0,.6) }
+.tile.focused::after { opacity: 1; animation: sheen 1.1s var(--ease) both }
+@keyframes sheen { from { background-position: 140% 0 } to { background-position: -40% 0 } }
+.card { width: 304px; height: 171px }
+.prog { position: absolute; left: 16px; right: 16px; bottom: 14px; height: 6px; border-radius: 3px; background: rgba(255,255,255,.3) }
+.prog i { display: block; height: 100%; width: 38%; border-radius: 3px; background: var(--blue) }
+
+.dock { position: absolute; left: 120px; right: 120px; top: 804px; padding: 30px 32px; border-radius: 40px; display: flex; gap: 24px; justify-content: center }
+.icon { width: 240px; height: 135px }
+.label { position: absolute; top: 1012px; height: 34px; font-size: 26px; font-weight: 700; text-align: center; white-space: nowrap; transform: translateX(-50%); transition: left .35s var(--ease), opacity .25s; pointer-events: none }
+
+/* all apps */
+.all { position: absolute; left: 120px; right: 120px; top: 1130px }
+.all h2 { margin: 0 0 26px; font-size: 40px; font-weight: 800; letter-spacing: -.02em }
+.grid { display: grid; grid-template-columns: repeat(6, 240px); gap: 34px 32px; justify-content: space-between }
+.text-tile { display: grid; place-items: center; padding: 16px; text-align: center; font-size: 24px; font-weight: 700; line-height: 1.2; color: var(--paper) }
+.text-tile small { display: block; font-size: 17px; font-weight: 600; color: var(--muted); margin-top: 6px }
+
+.toast { position: absolute; left: 50%; top: 52px; transform: translate(-50%, -20px); padding: 16px 30px; border-radius: 999px; font-size: 24px; font-weight: 700; opacity: 0; transition: opacity .3s, transform .4s var(--ease); pointer-events: none }
+.toast.show { opacity: 1; transform: translate(-50%, 0) }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0s !important; animation: none !important }
+}
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="bar">
+    <h1>ShaddaiTV Home, prototype</h1>
+    <p>Move with <kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd>, open with <kbd>Enter</kbd>, or use the mouse.</p>
+  </header>
+  <main class="frame" id="frame" aria-label="TV screen, 1920 by 1080">
+    <div class="stage" id="stage">
+      <div class="wall" id="wallA"></div>
+      <div class="wall off" id="wallB"></div>
+      <div class="hero-art" id="heroArt" style="background-image:url({{hero.jpg}})"></div>
+      <div class="scrim"></div>
+
+      <div class="scroller" id="scroller">
+        <section class="shelf" id="shelf">
+          <img class="lockup" src="{{lockup.png}}" alt="ShaddaiTV">
+          <h2 class="title">Avatar: Seven Havens</h2>
+          <div class="meta"><span>Season 1, Episode 4</span><span>The Faceless</span><span class="left">23 min left</span></div>
+          <p class="desc">Team Avatar sets out to find a missing bender, leading them into a dangerous confrontation with a ruthless gang of bandits.</p>
+          <div class="acts">
+            <div class="btn solid" data-zone="hero" data-name="Resume" data-say="Resuming The Faceless in ShaddaiTV"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.14v13.72a1 1 0 0 0 1.52.85l11-6.86a1 1 0 0 0 0-1.7l-11-6.86A1 1 0 0 0 8 5.14Z"/></svg>Resume</div>
+            <div class="btn glass" data-zone="hero" data-name="Episodes" data-say="Opening Avatar: Seven Havens in ShaddaiTV">Episodes</div>
+          </div>
+        </section>
+
+        <section class="app-shelf hide" id="appShelf">
+          <div class="art" id="appArt"></div>
+          <h2 id="appName"></h2>
+        </section>
+
+        <section class="row" id="row">
+          <div class="group">
+            <h3>Continue watching</h3>
+            <div class="items">
+              <div class="tile card" data-zone="row" data-name="The Faceless" data-say="Resuming The Faceless in ShaddaiTV" style="background-image:url({{ep-faceless.jpg}})"><div class="prog"><i></i></div></div>
+            </div>
+          </div>
+          <div class="group">
+            <h3>Your libraries</h3>
+            <div class="items">
+              <div class="tile card" data-zone="row" data-name="Shows" data-say="Opening Shows in ShaddaiTV" style="background-image:url({{lib-shows.jpg}})"></div>
+              <div class="tile card" data-zone="row" data-name="Movies" data-say="Opening Movies in ShaddaiTV" style="background-image:url({{lib-movies.jpg}})"></div>
+              <div class="tile card" data-zone="row" data-name="Animation Shows" data-say="Opening Animation Shows in ShaddaiTV" style="background-image:url({{lib-animation-shows.jpg}})"></div>
+            </div>
+          </div>
+        </section>
+
+        <nav class="dock glass" id="dock" aria-label="Favourite apps">
+          <div class="tile icon" data-zone="dock" data-name="ShaddaiTV" data-shaddai="1" style="background-image:url({{app-shaddaitv.png}})"></div>
+          <div class="tile icon" data-zone="dock" data-name="YouTube" style="background-image:url({{app-youtube.png}})"></div>
+          <div class="tile icon" data-zone="dock" data-name="Disney+" style="background-image:url({{app-disney.png}})"></div>
+          <div class="tile icon" data-zone="dock" data-name="Prime Video" style="background-image:url({{app-prime.png}})"></div>
+          <div class="tile icon" data-zone="dock" data-name="Spotify" style="background-image:url({{app-spotify.png}})"></div>
+          <div class="tile icon" data-zone="dock" data-name="Jellyfin" style="background-image:url({{app-jellyfin.png}})"></div>
+        </nav>
+        <div class="label" id="label"></div>
+
+        <section class="all" aria-label="All apps">
+          <h2>All apps</h2>
+          <div class="grid">
+            <div class="tile icon" data-zone="grid" data-name="Play Store" style="background-image:url({{app-playstore.png}})"></div>
+            <div class="tile icon glass text-tile" data-zone="grid" data-name="Netflix">Netflix</div>
+            <div class="tile icon glass text-tile" data-zone="grid" data-name="Shahid">Shahid</div>
+            <div class="tile icon glass text-tile" data-zone="grid" data-name="AirScreen">AirScreen</div>
+            <div class="tile icon glass text-tile" data-zone="grid" data-name="Tailscale">Tailscale</div>
+            <div class="tile icon glass text-tile" data-zone="grid" data-name="Windscribe">Windscribe</div>
+            <div class="tile icon glass text-tile" data-zone="grid" data-name="TV Bro">TV Bro</div>
+            <div class="tile icon glass text-tile" data-zone="grid" data-name="Browser">Browser</div>
+            <div class="tile icon glass text-tile" data-zone="grid" data-name="Settings">Settings</div>
+            <div class="tile icon glass text-tile" data-zone="grid" data-name="Show hidden apps" data-say="FileManager and System Tracing are now shown">Show hidden apps<small>FileManager, System Tracing</small></div>
+            <div class="tile icon glass text-tile" data-zone="grid" data-name="Switch back to Google TV" data-say="Opens Android TV Home in Settings, where Enable switches back">Switch back<small>to Google TV</small></div>
+          </div>
+        </section>
+      </div>
+
+      <div class="clock glass" id="clock"><b id="time"></b><span id="date"></span></div>
+      <div class="toast glass" id="toast" role="status"></div>
+    </div>
+  </main>
+  <p class="note">On the box the blur is rendered once when an app gains focus (Android 10 has no live blur), so it stays smooth on the TV's chip. Artwork is from your own library and the apps installed on the box.</p>
+</div>
+<script>
+(() => {
+  const stage = document.getElementById('stage'), frame = document.getElementById('frame');
+  const fit = () => { stage.style.transform = `scale(${frame.clientWidth / 1920})` };
+  new ResizeObserver(fit).observe(frame); fit();
+
+  const zones = { hero: [], row: [], dock: [], grid: [] };
+  document.querySelectorAll('[data-zone]').forEach(el => zones[el.dataset.zone].push(el));
+  const order = ['hero', 'row', 'dock', 'grid'];
+  let zone = 'dock', idx = 0;
+  const memory = { hero: 0, row: 0, dock: 0, grid: 0 };
+
+  const $ = id => document.getElementById(id);
+  const walls = [$('wallA'), $('wallB')]; let wallOn = 0, wallSrc = '';
+  const heroSrc = $('heroArt').style.backgroundImage;
+  function setWall(src) {
+    if (src === wallSrc) return; wallSrc = src;
+    const next = walls[1 - wallOn]; next.style.backgroundImage = src; next.classList.remove('off');
+    walls[wallOn].classList.add('off'); wallOn = 1 - wallOn;
+  }
+
+  function render() {
+    document.querySelectorAll('.focused').forEach(el => el.classList.remove('focused'));
+    const el = zones[zone][idx]; el.classList.add('focused');
+    const appFocus = zone === 'dock' && !el.dataset.shaddai || zone === 'grid';
+    const art = el.style.backgroundImage;
+    $('shelf').classList.toggle('hide', appFocus);
+    $('row').classList.toggle('hide', appFocus);
+    $('heroArt').style.opacity = appFocus ? 0 : 1;
+    $('appShelf').classList.toggle('hide', !appFocus || zone === 'grid');
+    if (appFocus) { $('appArt').style.backgroundImage = art || 'none'; $('appName').textContent = el.dataset.name }
+    setWall(appFocus && art ? art : heroSrc);
+    $('scroller').classList.toggle('down', zone === 'grid');
+    $('clock').style.opacity = zone === 'grid' ? 0 : 1; // the dock slides up under it in All apps
+    const label = $('label');
+    if (zone === 'dock') {
+      const r = el.getBoundingClientRect(), s = stage.getBoundingClientRect(), k = 1920 / s.width;
+      label.style.left = ((r.left + r.width / 2 - s.left) * k) + 'px'; label.textContent = el.dataset.name; label.style.opacity = 1;
+    } else label.style.opacity = 0;
+  }
+
+  function move(dx, dy) {
+    if (dx) { idx = Math.max(0, Math.min(zones[zone].length - 1, idx + dx)); }
+    if (dy) {
+      let zi = order.indexOf(zone);
+      if (zone === 'grid' && dy > 0 && idx + 6 < zones.grid.length) { idx += 6; return render() }
+      if (zone === 'grid' && dy < 0 && idx >= 6) { idx -= 6; return render() }
+      zi = Math.max(0, Math.min(order.length - 1, zi + dy));
+      if (order[zi] === zone) return;
+      memory[zone] = idx; zone = order[zi];
+      idx = Math.min(memory[zone], zones[zone].length - 1);
+    }
+    render();
+  }
+
+  let toastTimer;
+  function open(el) {
+    const t = $('toast'); t.textContent = el.dataset.say || `Opening ${el.dataset.name}`;
+    t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 1800);
+  }
+
+  addEventListener('keydown', e => {
+    const k = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
+    if (k) { e.preventDefault(); move(...k) } else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(zones[zone][idx]) }
+  });
+  // Follow the pointer only when it actually moves: focus changes rescale tiles, which would
+  // otherwise fire hover on whatever sits under a still mouse and steal focus from the keys.
+  document.querySelectorAll('[data-zone]').forEach(el => {
+    el.addEventListener('mousemove', e => {
+      if (!e.movementX && !e.movementY) return;
+      if (zones[zone][idx] === el) return;
+      memory[zone] = idx; zone = el.dataset.zone; idx = zones[zone].indexOf(el); render();
+    });
+    el.addEventListener('click', () => open(el));
+  });
+
+  const tick = () => {
+    const d = new Date();
+    $('time').textContent = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    $('date').textContent = d.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' });
+  };
+  tick(); setInterval(tick, 10000);
+  setWall(heroSrc); render();
+})();
+</script>
+</body>
+</html>
