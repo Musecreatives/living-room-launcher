@@ -26,6 +26,9 @@ class HomeActivity : ComponentActivity() {
     private var shelf by mutableStateOf<List<ShelfItem>>(emptyList())
     private var weather by mutableStateOf<List<CityWeather>>(emptyList())
     private var showHidden = false
+    private val prefs by lazy { getSharedPreferences("home", MODE_PRIVATE) }
+
+    private fun savedOrder() = prefs.getString("order", null)?.split('\n').orEmpty()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -33,8 +36,9 @@ class HomeActivity : ComponentActivity() {
         val canvas = Density(resources.displayMetrics.widthPixels / 1280f, fontScale = 1f)
         setContent {
             val notes by NotesStore.flow.collectAsState()
+            val nowPlaying by NowPlayingStore.flow.collectAsState()
             CompositionLocalProvider(LocalDensity provides canvas) {
-                HomeScreen(apps, shelf, weather, notes, ::open, ::launch)
+                HomeScreen(apps, shelf, weather, notes, nowPlaying, ::open, ::launch, ::reorder)
             }
         }
         // Weather every 30 minutes while Home is on screen
@@ -56,7 +60,13 @@ class HomeActivity : ComponentActivity() {
     }
 
     private fun reload() {
-        lifecycleScope.launch { apps = withContext(Dispatchers.Default) { loadApps(this@HomeActivity, showHidden) } }
+        lifecycleScope.launch { apps = withContext(Dispatchers.Default) { loadApps(this@HomeActivity, showHidden, savedOrder()) } }
+    }
+
+    /** Saves the arrangement (keys not on screen, e.g. hidden apps, keep their old place) and applies it without reloading banners. */
+    private fun reorder(keys: List<String>) {
+        prefs.edit().putString("order", (keys + savedOrder().filter { it !in keys }).joinToString("\n")).apply()
+        apps = apps?.let { cur -> keys.mapNotNull { k -> cur.find { it.key == k } } + cur.filter { it.key !in keys } }
     }
 
     private fun open(app: AppEntry) {

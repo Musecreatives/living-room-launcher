@@ -19,10 +19,20 @@ data class AppEntry(
     val launch: Intent,
     val banner: ImageBitmap?,
     val icon: ImageBitmap?,
+    /** False for the Settings, switch-back and toggle tiles: they stay at the end of the grid. */
+    val movable: Boolean = true,
 )
 
-// ShaddaiTV first (release, then debug build); everything else alphabetical.
-private val PINNED = listOf("com.livingroom.tv", "com.livingroom.tv.debug")
+// Dock favourites in this order when installed (ShaddaiTV first); everything else goes to All apps.
+val DOCK =
+    listOf("com.livingroom.tv", "com.livingroom.tv.debug") +
+        listOf(
+            "com.google.android.youtube.tv",
+            "com.netflix.mediaclient",
+            "com.disney.disneyplus",
+            "com.amazon.amazonvideo.livingroom",
+            "com.spotify.tv.android",
+        )
 
 // Utility apps kept off the grid until "Show hidden apps" is selected.
 private val HIDDEN = setOf("com.softwinner.TvdFileManager", "com.android.traceur")
@@ -30,10 +40,11 @@ private val HIDDEN = setOf("com.softwinner.TvdFileManager", "com.android.traceur
 /** Launch action of the tile that shows or hides [HIDDEN] apps; handled by HomeActivity, not Android. */
 const val ACTION_TOGGLE_HIDDEN = "com.livingroom.launcher.TOGGLE_HIDDEN"
 
-/** Lists launchable TV apps plus Settings tiles. Slow (decodes banners): call off the main thread. */
+/** Lists launchable TV apps plus Settings tiles. [order] is the user's saved arrangement. Slow (decodes banners): call off the main thread. */
 fun loadApps(
     context: Context,
     showHidden: Boolean,
+    order: List<String>,
 ): List<AppEntry> {
     val pm = context.packageManager
     val apps =
@@ -52,12 +63,16 @@ fun loadApps(
                             .setComponent(ComponentName(info.packageName, info.name)),
                 )
             }.sortedWith(
-                compareBy<AppEntry>({ PINNED.indexOf(it.key).let { i -> if (i < 0) Int.MAX_VALUE else i } }, { it.label.lowercase() }),
+                compareBy<AppEntry>(
+                    { order.indexOf(it.key).let { i -> if (i < 0) Int.MAX_VALUE else i } },
+                    { DOCK.indexOf(it.key).let { i -> if (i < 0) Int.MAX_VALUE else i } },
+                    { it.label.lowercase() },
+                ),
             )
     val settings =
         Intent(Settings.ACTION_SETTINGS).let { intent ->
             pm.resolveActivity(intent, 0)?.activityInfo?.let { info ->
-                entry(pm, info, intent, label = context.getString(R.string.settings))
+                entry(pm, info, intent, label = context.getString(R.string.settings)).copy(movable = false)
             }
         }
     // This firmware hard-wires Home to Google's launcher, so this launcher only becomes Home when that
@@ -66,7 +81,7 @@ fun loadApps(
         Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", GOOGLE_TV_HOME, null)).let { intent ->
             pm.resolveActivity(intent, 0)?.activityInfo?.let { info ->
                 // Text tile: borrowing the Settings app's artwork made it identical to the Settings tile
-                entry(pm, info, intent, label = context.getString(R.string.switch_back)).copy(banner = null, icon = null)
+                entry(pm, info, intent, label = context.getString(R.string.switch_back)).copy(banner = null, icon = null, movable = false)
             }
         }
     val toggleHidden =
@@ -76,6 +91,7 @@ fun loadApps(
             launch = Intent(ACTION_TOGGLE_HIDDEN),
             banner = null,
             icon = null,
+            movable = false,
         )
     return apps + listOfNotNull(settings, switchBack, toggleHidden)
 }

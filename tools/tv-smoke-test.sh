@@ -90,6 +90,27 @@ shot 09c-hidden-shown
 key BACK BACK BACK
 on_home "Back from All apps stays on Home"
 
+# Rearranging: long-press OK on the second dock tile, nudge it right, then back left, and drop (order ends unchanged).
+# Screenshots 10a-10c show the move mode, the tile one step right, and the dropped result.
+fresh
+key DPAD_RIGHT
+a shell input keyevent --longpress KEYCODE_DPAD_CENTER
+sleep 1.5
+shot 10a-move-mode
+key DPAD_RIGHT
+shot 10b-moved-right
+key DPAD_LEFT DPAD_CENTER
+shot 10c-dropped
+on_home "Move mode drops back to Home"
+
+# Hidden-apps toggle keeps focus: 11 should still outline the toggle tile ("Hide them again")
+fresh
+key "${TO_LAST_TILE[@]}"
+key DPAD_CENTER
+sleep 3
+shot 11-toggle-keeps-focus
+key BACK BACK BACK
+
 echo
 echo "$pass passed, $fail failed. Screenshots: $OUT"
 [ "$fail" -eq 0 ]

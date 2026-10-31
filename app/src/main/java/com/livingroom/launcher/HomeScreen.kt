@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
@@ -31,6 +33,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -50,6 +53,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -74,6 +82,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Date
+import kotlin.math.abs
 
 private val Gutter = 80.dp
 private val TileShape = RoundedCornerShape(14.dp)
@@ -81,17 +90,8 @@ private val Pill = RoundedCornerShape(50)
 private val GlassFill = Color.White.copy(alpha = .08f)
 private val GlassEdge = Color.White.copy(alpha = .16f)
 
-// Dock favourites in this order when installed (ShaddaiTV first); everything else goes to All apps.
-private val DOCK =
-    SHADDAI_TV_PACKAGES +
-        listOf(
-            "com.google.android.youtube.tv",
-            "com.netflix.mediaclient",
-            "com.disney.disneyplus",
-            "com.amazon.amazonvideo.livingroom",
-            "com.spotify.tv.android",
-        )
 private const val DOCK_SIZE = 6
+private const val GRID_COLUMNS = 6
 
 private enum class Panel { None, Weather, Notes }
 
@@ -101,19 +101,27 @@ fun HomeScreen(
     shelf: List<ShelfItem>,
     weather: List<CityWeather>,
     notes: List<Note>,
+    nowPlaying: NowPlaying?,
     onOpen: (AppEntry) -> Unit,
     onIntent: (Intent) -> Unit,
+    onReorder: (List<String>) -> Unit,
 ) {
     var focusedApp by remember { mutableStateOf<AppEntry?>(null) }
     var selected by remember(shelf) { mutableStateOf(shelf.firstOrNull()) }
     var panel by remember { mutableStateOf(Panel.None) }
+    // Move mode: long-press OK on a tile, then the D-pad shifts it and OK drops it
+    var moving by remember { mutableStateOf<String?>(null) }
+    var dropPending by remember { mutableStateOf(false) }
+    var refocusToggle by remember { mutableStateOf(false) }
     val scroll = rememberScrollState()
     val scope = rememberCoroutineScope()
     val firstDock = remember { FocusRequester() }
     val reduce = reduceMotion()
     // Back closes an open panel; otherwise it returns focus to the dock from anywhere (widgets, shelf, All apps)
     BackHandler {
-        if (panel != Panel.None) {
+        if (moving != null) {
+            moving = null
+        } else if (panel != Panel.None) {
             panel = Panel.None
         } else {
             scope.launch { scroll.animateScrollTo(0) }
@@ -122,8 +130,21 @@ fun HomeScreen(
     }
 
     val all = apps.orEmpty()
-    val dock = remember(all) { all.filter { it.key in DOCK }.sortedBy { DOCK.indexOf(it.key) }.take(DOCK_SIZE) }
+    val dock = remember(all) { all.filter { it.key in DOCK }.take(DOCK_SIZE) }
     val rest = remember(all, dock) { all - dock.toSet() }
+
+    // Moves the tile one step (or a grid row) within its own list; the dock only moves sideways
+    fun move(step: Int) {
+        val id = moving ?: return
+        val inDock = dock.any { it.key == id }
+        val list = (if (inDock) dock else rest).toMutableList()
+        val i = list.indexOfFirst { it.key == id }
+        val j = i + step
+        if (i < 0 || j !in list.indices || !list[j].movable || (inDock && abs(step) > 1)) return
+        list.add(j, list.removeAt(i))
+        onReorder((if (inDock) list + rest else dock + list).map { it.key })
+    }
+
     val appMode = focusedApp?.let { it.key !in SHADDAI_TV_PACKAGES } ?: false
     val item = selected ?: shelf.firstOrNull()
     val backdrop = rememberImage(item?.backdropUrl)
@@ -133,7 +154,28 @@ fun HomeScreen(
         wallSource?.let { src -> value = withContext(Dispatchers.Default) { blurred(src.asAndroidBitmap()).asImageBitmap() } }
     }
 
-    BoxWithConstraints(Modifier.fillMaxSize().background(Ink0)) {
+    BoxWithConstraints(
+        Modifier.fillMaxSize().background(Ink0).onPreviewKeyEvent { e ->
+            if (moving == null) return@onPreviewKeyEvent false
+            val down = e.type == KeyEventType.KeyDown
+            when (e.key) {
+                Key.DirectionLeft -> if (down) move(-1)
+                Key.DirectionRight -> if (down) move(1)
+                Key.DirectionUp -> if (down) move(-GRID_COLUMNS)
+                Key.DirectionDown -> if (down) move(GRID_COLUMNS)
+                // Drop on the release of a fresh press; the release of the long-press that started the move is ignored
+                Key.DirectionCenter, Key.Enter ->
+                    if (down && e.nativeKeyEvent.repeatCount == 0) {
+                        dropPending = true
+                    } else if (!down && dropPending) {
+                        dropPending = false
+                        moving = null
+                    }
+                else -> return@onPreviewKeyEvent false
+            }
+            true
+        },
+    ) {
         val screen = maxHeight
         Crossfade(wall, animationSpec = tween(if (reduce) 0 else 600), label = "wall") { w ->
             if (w != null) Image(w, null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize().alpha(.55f))
@@ -191,31 +233,57 @@ fun HomeScreen(
                             .padding(top = 18.dp, bottom = 8.dp, start = 20.dp, end = 20.dp),
                 ) {
                     dock.forEachIndexed { i, app ->
-                        Tile(
-                            app = app,
-                            width = 160.dp,
-                            showLabel = true,
-                            onFocus = {
-                                focusedApp = app
-                                scope.launch { scroll.animateScrollTo(0) }
-                            },
-                            onClick = { onOpen(app) },
-                            modifier = if (i == 0) Modifier.focusRequester(firstDock) else Modifier,
-                        )
+                        key(app.key) {
+                            Tile(
+                                app = app,
+                                width = 160.dp,
+                                showLabel = true,
+                                onFocus = {
+                                    focusedApp = app
+                                    scope.launch { scroll.animateScrollTo(0) }
+                                },
+                                onClick = { onOpen(app) },
+                                onLongClick = if (app.movable) ({ moving = app.key }) else null,
+                                moving = moving == app.key,
+                                modifier = if (i == 0) Modifier.focusRequester(firstDock) else Modifier,
+                            )
+                        }
                     }
                 }
             }
-            AllApps(rest, onFocus = { focusedApp = it }, onOpen = onOpen)
+            AllApps(
+                rest,
+                onFocus = { focusedApp = it },
+                onOpen = {
+                    if (it.launch.action == ACTION_TOGGLE_HIDDEN) refocusToggle = true
+                    onOpen(it)
+                },
+                onLongClick = { moving = it.key },
+                moving = moving,
+                refocusToggle = refocusToggle,
+                onRefocused = { refocusToggle = false },
+            )
         }
 
         val widgetsAlpha by animateFloatAsState(if (scroll.value > 120) 0f else 1f, tween(if (reduce) 0 else 300), label = "widgets")
         Widgets(
             weather = weather,
             notes = notes,
+            nowPlaying = nowPlaying,
             onToggle = { panel = if (panel == it) Panel.None else it },
             onFocus = { scope.launch { scroll.animateScrollTo(0) } },
             modifier = Modifier.align(Alignment.TopEnd).padding(top = 32.dp, end = Gutter).alpha(widgetsAlpha),
         )
+        if (moving != null) {
+            Text(
+                "Move with the arrow keys, press OK to drop",
+                fontFamily = Manrope,
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp,
+                color = Ink0,
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 165.dp).background(Fg, Pill).padding(horizontal = 20.dp, vertical = 9.dp),
+            )
+        }
         when (panel) {
             Panel.Weather -> WeatherPanel(weather, Modifier.align(Alignment.TopEnd).padding(top = 88.dp, end = Gutter))
             Panel.Notes -> NotesPanel(notes, Modifier.align(Alignment.TopEnd).padding(top = 88.dp, end = Gutter))
@@ -342,29 +410,56 @@ private fun ContinueRow(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun AllApps(
     apps: List<AppEntry>,
     onFocus: (AppEntry) -> Unit,
     onOpen: (AppEntry) -> Unit,
+    onLongClick: (AppEntry) -> Unit,
+    moving: String?,
+    refocusToggle: Boolean,
+    onRefocused: () -> Unit,
 ) {
+    val last = remember { FocusRequester() }
+    // The list reloads after the hidden-apps toggle and drops focus; put it back on the toggle (the last tile)
+    LaunchedEffect(apps) {
+        if (refocusToggle) {
+            withFrameNanos { }
+            runCatching { last.requestFocus() }
+            onRefocused()
+        }
+    }
     Column(Modifier.padding(start = Gutter, end = Gutter, top = 24.dp, bottom = 48.dp)) {
         Text(stringResource(R.string.all_apps), fontFamily = Manrope, fontWeight = FontWeight.ExtraBold, fontSize = 28.sp, color = Fg)
-        val rows = apps.chunked(6)
-        val last = remember { FocusRequester() }
-        rows.forEachIndexed { r, row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(20.dp), modifier = Modifier.padding(top = 16.dp)) {
-                row.forEachIndexed { c, app ->
-                    val m =
-                        when {
-                            // Right on the last tile stays put instead of jumping up a row
-                            r == rows.lastIndex && c == row.lastIndex ->
-                                Modifier.focusRequester(last).focusProperties { right = FocusRequester.Cancel }
-                            // Nothing directly below (short last row): Down goes to the last tile instead of nowhere
-                            r == rows.lastIndex - 1 && c > rows.last().lastIndex -> Modifier.focusProperties { down = last }
-                            else -> Modifier
-                        }
-                    Tile(app, width = 168.dp, showLabel = true, onFocus = { onFocus(app) }, onClick = { onOpen(app) }, cardModifier = m)
+        val lastRowStart = (apps.lastIndex / GRID_COLUMNS) * GRID_COLUMNS
+        FlowRow(
+            maxItemsInEachRow = GRID_COLUMNS,
+            horizontalArrangement = Arrangement.spacedBy(20.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            modifier = Modifier.padding(top = 16.dp),
+        ) {
+            apps.forEachIndexed { n, app ->
+                val m =
+                    when {
+                        // Right on the last tile stays put instead of jumping up a row
+                        n == apps.lastIndex -> Modifier.focusRequester(last).focusProperties { right = FocusRequester.Cancel }
+                        // Nothing directly below (short last row): Down goes to the last tile instead of nowhere
+                        n >= lastRowStart - GRID_COLUMNS && n < lastRowStart && n + GRID_COLUMNS > apps.lastIndex ->
+                            Modifier.focusProperties { down = last }
+                        else -> Modifier
+                    }
+                key(app.key) {
+                    Tile(
+                        app,
+                        width = 168.dp,
+                        showLabel = true,
+                        onFocus = { onFocus(app) },
+                        onClick = { onOpen(app) },
+                        onLongClick = if (app.movable) ({ onLongClick(app) }) else null,
+                        moving = moving == app.key,
+                        cardModifier = m,
+                    )
                 }
             }
         }
@@ -379,6 +474,8 @@ private fun Tile(
     onFocus: () -> Unit,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    onLongClick: (() -> Unit)? = null,
+    moving: Boolean = false,
     // Focus rules (requesters, Down redirects) must sit on the card, which is the focus target
     cardModifier: Modifier = Modifier,
 ) {
@@ -386,9 +483,10 @@ private fun Tile(
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
         Card(
             onClick = onClick,
+            onLongClick = onLongClick,
             shape = CardDefaults.shape(TileShape),
-            scale = CardDefaults.scale(focusedScale = 1.1f),
-            border = CardDefaults.border(focusedBorder = Border(BorderStroke(2.dp, Fg), shape = TileShape)),
+            scale = CardDefaults.scale(focusedScale = if (moving) 1.18f else 1.1f),
+            border = CardDefaults.border(focusedBorder = Border(BorderStroke(if (moving) 5.dp else 2.dp, if (moving) BlueLight else Fg), shape = TileShape)),
             glow = CardDefaults.glow(focusedGlow = Glow(elevationColor = Color.Black.copy(alpha = .6f), elevation = 18.dp)),
             colors = CardDefaults.colors(containerColor = if (app.banner == null && app.icon == null) GlassFill else Ink2),
             modifier =
@@ -475,11 +573,27 @@ private fun PillButton(
 private fun Widgets(
     weather: List<CityWeather>,
     notes: List<Note>,
+    nowPlaying: NowPlaying?,
     onToggle: (Panel) -> Unit,
     onFocus: () -> Unit,
     modifier: Modifier,
 ) {
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = modifier.onFocusChanged { if (it.hasFocus) onFocus() }) {
+        nowPlaying?.let { np ->
+            WidgetPill(onClick = np.toggle) {
+                Icon(painterResource(if (np.playing) R.drawable.ic_pause else R.drawable.ic_play), if (np.playing) "Pause" else "Play", modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    listOfNotNull(np.title, np.artist).joinToString(" · "),
+                    fontFamily = Manrope,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.widthIn(max = 220.dp),
+                )
+            }
+        }
         if (weather.isNotEmpty()) {
             WidgetPill(onClick = { onToggle(Panel.Weather) }) {
                 weather.forEachIndexed { i, w ->
