@@ -12,5 +12,12 @@ def data_uri(match):
     return f"data:{mime};base64,{base64.b64encode(f.read_bytes()).decode()}"
 
 
-(here / "index.html").write_text(re.sub(r"\{\{([\w.-]+)\}\}", data_uri, src), encoding="utf-8")
+def icon(match):
+    """{{icon:name}} -> inline Phosphor SVG (fill follows currentColor)."""
+    svg = (here / "assets" / "icons" / f"{match.group(1)}.svg").read_text(encoding="utf-8")
+    return svg.replace("<svg ", '<svg aria-hidden="true" class="ic" ', 1)
+
+
+html = re.sub(r"\{\{icon:([\w-]+)\}\}", icon, src)
+(here / "index.html").write_text(re.sub(r"\{\{([\w.-]+)\}\}", data_uri, html), encoding="utf-8")
 print("index.html", round((here / "index.html").stat().st_size / 1024), "KB")
