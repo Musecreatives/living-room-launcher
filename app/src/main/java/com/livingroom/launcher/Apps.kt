@@ -1,0 +1,91 @@
+package com.livingroom.launcher
+
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
+import android.content.pm.ActivityInfo
+import android.content.pm.PackageManager
+import android.graphics.drawable.Drawable
+import android.provider.Settings
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.core.graphics.drawable.toBitmap
+import androidx.palette.graphics.Palette
+
+/** One tile on the home screen. [tint] colours the top shelf while the tile is focused. */
+data class AppEntry(
+    val key: String,
+    val label: String,
+    val launch: Intent,
+    val banner: ImageBitmap?,
+    val icon: ImageBitmap?,
+    val tint: Color,
+)
+
+// Living Room first (release, then debug build); everything else alphabetical.
+private val PINNED = listOf("com.livingroom.tv", "com.livingroom.tv.debug")
+
+/** Lists launchable TV apps plus a Settings tile. Slow (decodes banners): call off the main thread. */
+fun loadApps(context: Context): List<AppEntry> {
+    val pm = context.packageManager
+    val apps =
+        pm
+            .queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER), 0)
+            .map { it.activityInfo }
+            .filter { it.packageName != context.packageName }
+            .distinctBy { it.packageName }
+            .map { info ->
+                entry(
+                    pm = pm,
+                    info = info,
+                    launch =
+                        Intent(Intent.ACTION_MAIN)
+                            .addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
+                            .setComponent(ComponentName(info.packageName, info.name)),
+                )
+            }.sortedWith(
+                compareBy<AppEntry>({ PINNED.indexOf(it.key).let { i -> if (i < 0) Int.MAX_VALUE else i } }, { it.label.lowercase() }),
+            )
+    val settings =
+        Intent(Settings.ACTION_SETTINGS).let { intent ->
+            pm.resolveActivity(intent, 0)?.activityInfo?.let { info ->
+                entry(pm, info, intent, label = context.getString(R.string.settings))
+            }
+        }
+    return apps + listOfNotNull(settings)
+}
+
+private fun entry(
+    pm: PackageManager,
+    info: ActivityInfo,
+    launch: Intent,
+    label: String = info.loadLabel(pm).toString(),
+): AppEntry {
+    val banner = (info.loadBanner(pm) ?: info.applicationInfo.loadBanner(pm))?.render(640, 360)
+    val icon = info.loadIcon(pm)?.render(192, 192)
+    val source = banner ?: icon
+    val tint =
+        source
+            ?.let { Palette.from(it).maximumColorCount(12).generate() }
+            ?.let { p -> Color(p.getDarkVibrantColor(p.getDarkMutedColor(p.getDominantColor(FALLBACK_TINT)))) }
+            ?: Color(FALLBACK_TINT)
+    return AppEntry(
+        key = info.packageName,
+        label = label,
+        launch = launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED),
+        banner = banner?.asImageBitmap(),
+        icon = icon?.asImageBitmap(),
+        tint = tint,
+    )
+}
+
+private const val FALLBACK_TINT = 0xFF1D2531.toInt()
+
+private fun Drawable.render(
+    fallbackWidth: Int,
+    fallbackHeight: Int,
+) = toBitmap(
+    width = intrinsicWidth.takeIf { it > 0 } ?: fallbackWidth,
+    height = intrinsicHeight.takeIf { it > 0 } ?: fallbackHeight,
+)
