@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.graphics.drawable.Drawable
+import android.net.Uri
 import android.provider.Settings
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
@@ -53,7 +54,15 @@ fun loadApps(context: Context): List<AppEntry> {
                 entry(pm, info, intent, label = context.getString(R.string.settings))
             }
         }
-    return apps + listOfNotNull(settings)
+    // This firmware hard-wires Home to Google's launcher, so this launcher only becomes Home when that
+    // one is disabled. The tile opens its app page, where "Enable" switches back without ADB.
+    val switchBack =
+        Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", GOOGLE_TV_HOME, null)).let { intent ->
+            pm.resolveActivity(intent, 0)?.activityInfo?.let { info ->
+                entry(pm, info, intent, label = context.getString(R.string.switch_back))
+            }
+        }
+    return apps + listOfNotNull(settings, switchBack)
 }
 
 private fun entry(
@@ -81,6 +90,7 @@ private fun entry(
 }
 
 private const val FALLBACK_TINT = 0xFF1D2531.toInt()
+private const val GOOGLE_TV_HOME = "com.google.android.tvlauncher"
 
 private fun Drawable.render(
     fallbackWidth: Int,
