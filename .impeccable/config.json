@@ -11,6 +11,15 @@
         ],
         "createdAt": "2026-10-31T14:51:18.494Z",
         "reason": "agent: the stage is a fixed 1920x1080 TV viewport; content outside the screen must be clipped like a real display"
+      },
+      {
+        "rule": "nested-cards",
+        "value": "*",
+        "files": [
+          "prototype/index.src.html"
+        ],
+        "createdAt": "2026-10-31T14:55:06.736Z",
+        "reason": "user chose 'tvOS dock + icons': the glass dock plate holding app icons is the requested pattern"
       }
     ]
   }
