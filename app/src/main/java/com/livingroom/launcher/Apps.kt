@@ -8,20 +8,17 @@ import android.content.pm.PackageManager
 import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.provider.Settings
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.core.graphics.drawable.toBitmap
-import androidx.palette.graphics.Palette
 
-/** One tile on the home screen. [tint] colours the top shelf while the tile is focused. */
+/** One tile on the home screen. */
 data class AppEntry(
     val key: String,
     val label: String,
     val launch: Intent,
     val banner: ImageBitmap?,
     val icon: ImageBitmap?,
-    val tint: Color,
 )
 
 // ShaddaiTV first (release, then debug build); everything else alphabetical.
@@ -68,7 +65,8 @@ fun loadApps(
     val switchBack =
         Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", GOOGLE_TV_HOME, null)).let { intent ->
             pm.resolveActivity(intent, 0)?.activityInfo?.let { info ->
-                entry(pm, info, intent, label = context.getString(R.string.switch_back))
+                // Text tile: borrowing the Settings app's artwork made it identical to the Settings tile
+                entry(pm, info, intent, label = context.getString(R.string.switch_back)).copy(banner = null, icon = null)
             }
         }
     val toggleHidden =
@@ -78,7 +76,6 @@ fun loadApps(
             launch = Intent(ACTION_TOGGLE_HIDDEN),
             banner = null,
             icon = null,
-            tint = Color(FALLBACK_TINT),
         )
     return apps + listOfNotNull(settings, switchBack, toggleHidden)
 }
@@ -89,25 +86,17 @@ private fun entry(
     launch: Intent,
     label: String = info.loadLabel(pm).toString(),
 ): AppEntry {
+    // Decoding ~30 banners is the slow part of a cold start; skip the icon when a banner exists
     val banner = (info.loadBanner(pm) ?: info.applicationInfo.loadBanner(pm))?.render(640, 360)
-    val icon = info.loadIcon(pm)?.render(192, 192)
-    val source = banner ?: icon
-    val tint =
-        source
-            ?.let { Palette.from(it).maximumColorCount(12).generate() }
-            ?.let { p -> Color(p.getDarkVibrantColor(p.getDarkMutedColor(p.getDominantColor(FALLBACK_TINT)))) }
-            ?: Color(FALLBACK_TINT)
+    val icon = if (banner == null) info.loadIcon(pm)?.render(192, 192) else null
     return AppEntry(
         key = info.packageName,
         label = label,
         launch = launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED),
         banner = banner?.asImageBitmap(),
         icon = icon?.asImageBitmap(),
-        tint = tint,
     )
 }
-
-private const val FALLBACK_TINT = 0xFF1D2531.toInt()
 private const val GOOGLE_TV_HOME = "com.google.android.tvlauncher"
 
 private fun Drawable.render(

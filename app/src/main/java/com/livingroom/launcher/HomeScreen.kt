@@ -42,6 +42,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
@@ -110,7 +111,15 @@ fun HomeScreen(
     val scope = rememberCoroutineScope()
     val firstDock = remember { FocusRequester() }
     val reduce = reduceMotion()
-    BackHandler { panel = Panel.None }
+    // Back closes an open panel; otherwise it returns focus to the dock from anywhere (widgets, shelf, All apps)
+    BackHandler {
+        if (panel != Panel.None) {
+            panel = Panel.None
+        } else {
+            scope.launch { scroll.animateScrollTo(0) }
+            runCatching { firstDock.requestFocus() }
+        }
+    }
 
     val all = apps.orEmpty()
     val dock = remember(all) { all.filter { it.key in DOCK }.sortedBy { DOCK.indexOf(it.key) }.take(DOCK_SIZE) }
@@ -119,7 +128,10 @@ fun HomeScreen(
     val item = selected ?: shelf.firstOrNull()
     val backdrop = rememberImage(item?.backdropUrl)
     val wallSource = if (appMode) focusedApp?.banner else backdrop
-    val wall = remember(wallSource) { wallSource?.let { blurred(it.asAndroidBitmap()).asImageBitmap() } }
+    // Blur off the main thread so rapid D-pad moves stay smooth; the old wallpaper stays until the new one is ready
+    val wall by produceState<ImageBitmap?>(null, wallSource) {
+        wallSource?.let { src -> value = withContext(Dispatchers.Default) { blurred(src.asAndroidBitmap()).asImageBitmap() } }
+    }
 
     BoxWithConstraints(Modifier.fillMaxSize().background(Ink0)) {
         val screen = maxHeight
@@ -201,6 +213,7 @@ fun HomeScreen(
             weather = weather,
             notes = notes,
             onToggle = { panel = if (panel == it) Panel.None else it },
+            onFocus = { scope.launch { scroll.animateScrollTo(0) } },
             modifier = Modifier.align(Alignment.TopEnd).padding(top = 32.dp, end = Gutter).alpha(widgetsAlpha),
         )
         when (panel) {
@@ -337,9 +350,22 @@ private fun AllApps(
 ) {
     Column(Modifier.padding(start = Gutter, end = Gutter, top = 24.dp, bottom = 48.dp)) {
         Text(stringResource(R.string.all_apps), fontFamily = Manrope, fontWeight = FontWeight.ExtraBold, fontSize = 28.sp, color = Fg)
-        apps.chunked(6).forEach { row ->
+        val rows = apps.chunked(6)
+        val last = remember { FocusRequester() }
+        rows.forEachIndexed { r, row ->
             Row(horizontalArrangement = Arrangement.spacedBy(20.dp), modifier = Modifier.padding(top = 16.dp)) {
-                row.forEach { app -> Tile(app, width = 168.dp, showLabel = false, onFocus = { onFocus(app) }, onClick = { onOpen(app) }) }
+                row.forEachIndexed { c, app ->
+                    val m =
+                        when {
+                            // Right on the last tile stays put instead of jumping up a row
+                            r == rows.lastIndex && c == row.lastIndex ->
+                                Modifier.focusRequester(last).focusProperties { right = FocusRequester.Cancel }
+                            // Nothing directly below (short last row): Down goes to the last tile instead of nowhere
+                            r == rows.lastIndex - 1 && c > rows.last().lastIndex -> Modifier.focusProperties { down = last }
+                            else -> Modifier
+                        }
+                    Tile(app, width = 168.dp, showLabel = true, onFocus = { onFocus(app) }, onClick = { onOpen(app) }, cardModifier = m)
+                }
             }
         }
     }
@@ -353,6 +379,8 @@ private fun Tile(
     onFocus: () -> Unit,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    // Focus rules (requesters, Down redirects) must sit on the card, which is the focus target
+    cardModifier: Modifier = Modifier,
 ) {
     var focused by remember { mutableStateOf(false) }
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
@@ -364,7 +392,7 @@ private fun Tile(
             glow = CardDefaults.glow(focusedGlow = Glow(elevationColor = Color.Black.copy(alpha = .6f), elevation = 18.dp)),
             colors = CardDefaults.colors(containerColor = if (app.banner == null && app.icon == null) GlassFill else Ink2),
             modifier =
-                Modifier.width(width).aspectRatio(16f / 9f).onFocusChanged {
+                cardModifier.width(width).aspectRatio(16f / 9f).onFocusChanged {
                     focused = it.isFocused
                     if (it.isFocused) onFocus()
                 },
@@ -448,9 +476,10 @@ private fun Widgets(
     weather: List<CityWeather>,
     notes: List<Note>,
     onToggle: (Panel) -> Unit,
+    onFocus: () -> Unit,
     modifier: Modifier,
 ) {
-    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = modifier) {
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = modifier.onFocusChanged { if (it.hasFocus) onFocus() }) {
         if (weather.isNotEmpty()) {
             WidgetPill(onClick = { onToggle(Panel.Weather) }) {
                 weather.forEachIndexed { i, w ->

@@ -48,5 +48,4 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.13.0")
     implementation("androidx.core:core-ktx:1.19.0")
     implementation("androidx.tv:tv-material:1.1.0-alpha01")
-    implementation("androidx.palette:palette-ktx:1.0.0")
 }
